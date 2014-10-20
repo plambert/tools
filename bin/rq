@@ -1,0 +1,65 @@
+#!/usr/bin/perl -w
+
+# a simple redis-based queue
+
+use 5.010;
+use strict;
+use warnings;
+use feature qw/say/;
+use Redis;
+
+
+my $redis=Redis->new;
+my $timeout=30;
+my $key;
+my $cmd;
+
+if (defined($ENV{RQKEY})) {
+  $key=$ENV{RQKEY};
+  shift if ($ARGV[0] and $ARGV[0] eq '-');
+}
+else {
+  $key=shift;
+}
+
+$key="q:$key" unless ($key =~ /^q:/);
+
+$cmd=shift;
+
+unless (defined($key) and defined($cmd)) {
+  die "usage: $0 <key> [ add | pop | list | show | count | size ] [options]\n";
+}
+
+if ($cmd eq 'add' or $cmd eq 'push') {
+  $redis->rpush($key, $ARGV[0]);
+}
+elsif ($cmd eq 'pop') {
+  my $result=$redis->blpop($key, $timeout);
+  if ($result) {
+    say($result->[1]);
+  }
+  else {
+    print STDERR "timeout\n";
+    exit 1;
+  }
+}
+elsif ($cmd eq 'show' or $cmd eq 'list') {
+  my $result=$redis->lrange($key, 0, 9999);
+  if ($result) {
+    if (ref $result eq 'ARRAY') {
+      printf "%3d: %s\n", $_, $result->[$_] for (0..$#{$result});
+    }
+    else {
+      use Data::Dumper; print Dumper($result);
+    }
+  }
+}
+elsif ($cmd eq 'count' or $cmd eq 'size') {
+  my $result=$redis->llen($key);
+  $result = 0 unless (defined($result) and $result>0);
+  printf "%d\n", $result;
+}
+else {
+  die "$0: ${cmd}: unknown command\n";
+}
+
